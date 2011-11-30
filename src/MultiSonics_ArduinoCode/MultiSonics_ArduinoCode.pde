@@ -13,13 +13,10 @@
 #define ENABLE_6 7
 #define ENABLE_7 8 
 #define ENABLE_8 9
-// Globals for the analog input pins
-#define SCALE_POT 0
-#define ROOTNOTE_POT 1
-#define BEATVALUE_POT 2
-#define INTRVLSIZE_POT 3
-#define NOTELNGTH_POT 4
-#define VOICESEL_POT 5
+// Globals for the analog input pins and selector switch
+#define SELECTOR_SWITCH 10
+#define UPDATE_POT 0
+#define SELECTOR_POT 1
 // Additional Utility Pins
 #define STATUS_LED 13 // Same as Arduino LED
 // Some additional constants
@@ -29,17 +26,20 @@
 #define VOICEDIV 16
 #define SCALEDIV 6
 #define BEATDIV 9
+#define PARAMDIV 25
 // Because these are more likely to change, and as not to clash with define, the number of params/toggles with be declared as constant variables
 const int onOffSwitches_amt = 8;
-const int params_amt = 6;
 // Global arrays that serve as universal memory addresses for references to each of the input pins
 static int on_off_switches[onOffSwitches_amt] = {ENABLE_1, ENABLE_2, ENABLE_3, ENABLE_4, ENABLE_5, ENABLE_6, ENABLE_7, ENABLE_8};
-static int params[params_amt] = {SCALE_POT, ROOTNOTE_POT, BEATVALUE_POT, INTRVLSIZE_POT, NOTELNGTH_POT, VOICESEL_POT};
+
+typedef enum {VOICE, PARAM} SELECTOR;
+typedef enum {SCALE, ROOT, BEATVALUE, MAXSTEP, NOTELENGTH} PARAM;
 
 void setup() {
   int i = 0;
   // set up two utility pins
   pinMode(STATUS_LED, OUTPUT);
+  digitalWrite(STATUS_LED, HIGH);
   // clear any stray logic 
   for (i = ENABLE_1; i < ENABLE_8; i++) {
     digitalWrite(i, LOW);
@@ -52,9 +52,12 @@ void setup() {
 }
 
 int enableState;
+int voice = 1, 
+PARAM param = SCALE;
 
 void loop() {
   int i = ENABLE_1;
+  SELECTOR whatToSelect = (digitalRead(SELECTOR_SWITCH) == HIGH) ? VOICE : PARAM;
   // Toggle different patch voices
   for (; i <= ENABLE_8; i++) {
     enableState = digitalRead(on_off_switches[i-2]);
@@ -64,18 +67,19 @@ void loop() {
       ToggleVoice(on_off_switches[i-2], 0);
     delay(10);
   }
-  // Select the proper voice to update parameters for  
-  int voice = vSplitChoose(MIDIMap(analogRead(params[VOICESEL_POT])));
-  // Update that voice's parameters
-  for (i = 0; i < params_amt; i++) {
-    if (i == SCALE_POT)
-      updatePatchParams(i, voice, MIDIMap(analogRead(params[i]))/SCALEDIV);
-    else if (i == BEATVALUE_POT) 
-      updatePatchParams(i, voice, MIDIMap(analogRead(params[i]))/BEATDIV);
-    else
-      updatePatchParams(i, voice, MIDIMap(analogRead(params[i]))); 
-    delay(1000);
-  }    
+  // Select either a new voice to update or a new parameter
+  if (whatToSelect == VOICE)
+    voice = vSplitChoose(MIDIMap(analogRead(params[SELECTOR_POT])), VOICEDIV);
+  else
+    param = vSplitChoose(MIDIMap(analogRead(params[SELECTOR_POT])), PARAMDIV); 
+    
+  // Update the chosen voice with the chosen parameter
+  if (param == SCALE)
+    updatePatchParams(voice, param, MIDIMap(analogRead(UPDATE_POT))/SCALEDIV);
+  else if (param == BEATVALUE)
+    updatePatchParams(voice, param, MIDIMap(analogRead(UPDATE_POT))/BEATDIV);
+  else
+    updatePatchParams(voice, param, MIDIMap(analogRead(UPDATE_POT)));  
 }
 
 int MIDIMap(int inVar) {
@@ -88,11 +92,11 @@ void ToggleVoice(const int pin, const short unsigned int state) {
   Serial.print(state, BYTE);
 }
 
-int vSplitChoose(const int inVal) {
-  return inVal/VOICEDIV + 1; // returns anywhere from 1 - 8
+int vSplitChoose(const int inVal, const int split) {
+  return inVal/split + 1; // returns anywhere from 1 - 8 for voices, 1 - 4 for params
 }
 
-void updatePatchParams(const int inParamID, const int inVoice, const int inValue) { // Update inParamID to the value of inValue at the selected inVoice in the patch
+void updatePatchParams(const int inVoice, const int inParamID, const int inValue) { // Update inParamID to the value of inValue at the selected inVoice in the patch
   Serial.print(inVoice, BYTE);
   Serial.print(inParamID, BYTE);
   Serial.print(inValue, BYTE);
